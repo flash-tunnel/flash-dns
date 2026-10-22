@@ -40,7 +40,8 @@
 ## 后续集成
 
 - [x] 配置工具本身的跨平台 CI 验证。
-- [ ] 确定包发布认证方式。
+- [x] 确定发布 CI 文件名为 release.yaml，唯一触发为 v* tag，并采用 npm Trusted Publisher。
+- [ ] 核对各包 npm Trusted Publisher 的仓库和 release.yaml 绑定。
 - [ ] 设计并实施 flash-tunnel 桥接层。
 - [ ] 验证旧会话、keep 和异常恢复。
 - [ ] 在明确的测试 Zone 进行受控集成验证。
@@ -55,7 +56,7 @@
 | npm 作用域 | 拟使用 @flash-dns；用户已建组织，实际权限待核对 |
 | 包版本 | 统一 0.1.0 |
 | 配置文件与 API 命名 | 已落地，精确接口见根 README |
-| CI / registry / 认证 | 已配置只读验证 CI；registry 发布权限和认证待核对 |
+| CI / registry / 认证 | release.yaml 只监听 v* tag，验证后使用 OIDC 发布；npm 后台绑定和权限待核对 |
 | 真实 DNS 操作 | 未执行；离线测试不使用凭据，受控测试 Zone 待指定 |
 
-首版独立工具代码、依赖和离线验证已完成，详见 [开发报告](../implementation-report.md)。未修改 flash-tunnel，未操作真实 DNS，未提交、推送或发布。
+首版独立工具代码、依赖和离线验证已完成，详见 [开发报告](../implementation-report.md)。首版提交已通过 SSH 推送到 main；发布 workflow 已配置，尚未推送发布 tag 或执行 npm 发布。未修改 flash-tunnel，未操作真实 DNS。

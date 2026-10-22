@@ -6,7 +6,7 @@
 
 调研时该项目使用 pnpm 12.14.0、ESLint 10、antfu config 9、TypeScript 6、unbuild 3、Vitest 5、simple-git-hooks 2、nano-staged 1、bumpp 12。它们是本地参考版本，不代表已验证适用于新项目；初始化时固定并验证兼容组合。
 
-本项目实际固定 pnpm 12.14.0、ESLint 10.13.0、antfu config 9.5.1、TypeScript 5.9.3、unbuild 3.6.1、Vitest 5.0.5。TypeScript 采用 5.9.3 以符合 unbuild 的 peer 范围。配置通过 unconfig + jiti alias 加载，不改写用户配置文本，也不在配置目录写临时转换文件。当前只配置验证 CI，未增加 bumpp 或 publish workflow。
+本项目实际固定 pnpm 12.14.0、ESLint 10.13.0、antfu config 9.5.1、TypeScript 5.9.3、unbuild 3.6.1、Vitest 5.0.5。TypeScript 采用 5.9.3 以符合 unbuild 的 peer 范围。配置通过 unconfig + jiti alias 加载，不改写用户配置文本，也不在配置目录写临时转换文件。发布 CI 使用下述 `release.yaml`；尚未增加 bumpp。
 
 ## 开发约定
 
@@ -83,7 +83,11 @@ install --frozen-lockfile → build → lint → typecheck → test → pack smo
 
 先 build，避免干净工作区下包类型入口还不存在。测试 core 和配置加载覆盖 Windows、Linux；需要 rsync/SSH 的部署测试不属于本项目。
 
-CLI 项目的版本验证和发包流程与演示站点部署流程独立。参考 flash-tunnel 的 tag 发布习惯；是否增加日常验证流水线、仓库使用的 runner 和 registry 在工程落地时确定。
+CLI 项目的版本验证和发包流程与演示站点部署流程独立。按用户要求参考 flash-tunnel，唯一 workflow 为 `.github/workflows/release.yaml`，唯一触发条件为 `push.tags: ['v*']`。不再保留分支 push、pull_request、workflow_dispatch 等其他触发方式。
+
+`verify` 使用 Windows / Linux 和 Node 22.14 / 24 矩阵，执行 build、lint、typecheck、test、pack smoke；全部成功后 `publish` 在 Ubuntu、Node 24 上重新构建并执行 `pnpm -r publish --access public --no-git-checks`。pnpm 版本仅由根 manifest 的 packageManager 提供。
+
+发布认证沿用参考项目的 npm Trusted Publisher：publish job 显式设置 `id-token: write` 与 `contents: read`，安装支持 OIDC 的 npm CLI，不注入 NPM_TOKEN。各包 npm 后台需绑定 `flash-tunnel/flash-dns` 和精确文件名 `release.yaml`；后台状态尚未核验。
 
 不把 GitHub Actions 的 OIDC 权限原样复制到 GitLab CI。认证依据实际发布平台选择，仓库 URL 也不意味着用户已经完成 npm Trusted Publisher 绑定。
 

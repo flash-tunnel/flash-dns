@@ -129,6 +129,8 @@ API 行为依据 [Cloudflare DNS Records API](https://developers.cloudflare.com/
 
 六个包为 types、config、core、adapter-cloudflare、cli、flash-dns。公共包输出 ESM 和类型声明，根包 private。工程采用 pnpm、antfu ESLint、nano-staged、simple-git-hooks、严格 TypeScript、unbuild 和 Vitest。
 
-公开发布前仍需核对 npm 组织/包权限并选择发布认证。当前只配置验证 CI，没有 publish workflow；不会在普通安装、构建或测试中操作真实 DNS。
+发布流程沿用 flash-tunnel 的 `.github/workflows/release.yaml`，唯一触发条件是推送 `v*` tag。普通分支 push、PR 和手动调度均不触发。流程先在 Windows / Linux、Node 22.14 / 24 验证构建、lint、类型、测试及打包，再通过 OIDC 发布 workspace 中的公开包，跳过 private 根包。
+
+发布前需要在各 npm 包的 Trusted Publisher 设置中绑定 GitHub 组织 `flash-tunnel`、仓库 `flash-dns` 和 workflow 文件名 `release.yaml`，并核对包的发布权限。流水线不依赖 NPM_TOKEN；配置文件不能代替 npm 后台绑定。各包版本需与发布 tag 一致，例如 0.1.0 对应 `v0.1.0`。普通安装、构建和测试不会操作真实 DNS。
 
 MIT License。

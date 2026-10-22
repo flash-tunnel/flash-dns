@@ -24,7 +24,8 @@
 - 读取请求有限重试；写请求失败后只恢复查询，不直接重发。未确认成功的写入交由调用方后续重新 ensure。
 - 暂未提供纯函数命名器、外部归属后端或资源接管；模板与显式 hostname 已覆盖首版场景。
 - 人类结果采用可读 JSON 文本；TTY 显示操作 spinner，取消路径停止并移除本次注册的信号监听。
-- 本地初始化 main 和目标 origin；HTTPS 远端检查成功且未返回 refs，SSH 检查超时。未提交、推送或发布。
+- 本地初始化 main 和目标 origin；首版提交 801d7d4 已通过 SSH 443 端口推送到 main。尚未发布。
+- 发布 CI 已按用户要求对齐 flash-tunnel：文件名 release.yaml，唯一监听 v* tag，跨平台 verify 全部通过后使用 OIDC 发布。npm 后台 Trusted Publisher 绑定仍需核对。
 
 ## 验证
 
@@ -55,12 +56,12 @@
 | files / exports / types / bin | 通过 | 无 | tarball 实测入口、声明、shebang 和内容 |
 | 根包 private | 通过 | 无 | true，不打包发布根包 |
 | registry 权限 | 待核对 | 未核验 | 未进行 npm 登录或后台权限检查 |
-| 发布认证 / OIDC | 尚未选择 | 未配置 | 无 publish job，无无效 token 变量 |
+| 发布认证 / OIDC | 仓库配置通过，后台待核对 | 未配置 | release.yaml 的 publish job 已设 id-token: write 和 contents: read，无 token 变量 |
 
 全部工程文件为新增；原设计文档同步了实现状态和工具版本。没有现有业务代码被替换。
 
 ## 后续范围
 
-- npm 组织、包名和发布权限的实际核验，选定发布认证方式。
-- 推送后运行 CI，补充真实测试 Zone 的受控集成验证。
+- npm 组织、包名、发布权限和各包 release.yaml Trusted Publisher 绑定的实际核验。
+- 推送发布 tag 后运行 release.yaml，补充真实测试 Zone 的受控集成验证。
 - flash-tunnel 桥接、旧会话兼容、keep 和恢复测试属于后续跨仓库集成，本轮未修改 flash-tunnel。
