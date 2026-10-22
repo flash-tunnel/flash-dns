@@ -41,7 +41,7 @@
   "dependencies": {
     "@flash-dns/config": "workspace:*",
     "@flash-dns/types": "workspace:*",
-    "jiti": "2.6.1",
-    "unconfig": "7.5.0"
+    "jiti": "^2.7.0",
+    "unconfig": "^7.5.0"
   }
 }

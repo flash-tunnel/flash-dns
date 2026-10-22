@@ -43,8 +43,8 @@
     "@flash-dns/config": "workspace:*",
     "@flash-dns/core": "workspace:*",
     "@flash-dns/types": "workspace:*",
-    "@inquirer/prompts": "8.7.4",
-    "cac": "7.1.0",
-    "yocto-spinner": "1.2.2"
+    "@inquirer/prompts": "^8.7.4",
+    "cac": "^7.1.0",
+    "yocto-spinner": "^1.2.2"
   }
 }
