@@ -16,7 +16,7 @@ flash-dns turns a project identity and a naming rule into a DNS record: it norma
 ## Why flash-dns
 
 - **One naming rule everywhere** — `{project}`, `{branch}`, `{session}` and custom variables turn a project identity into a repeatable hostname.
-- **Safe with existing DNS** — records carry a versioned owner marker. Unmanaged records are never adopted, foreign-owned records are never modified, and deletion is by exact ID with a snapshot check.
+- **Safe with existing DNS** — records created here carry a versioned owner marker. Unmanaged records are never adopted, foreign-owned records are never modified, and deletion is by exact ID with a snapshot check.
 - **Idempotent by design** — `plan` shows `create` / `update` / `noop` / `conflict` without writing. A second `ensure` with the same input is a no-op and keeps the record ID.
 - **Updates in place** — `PATCH` changes only the requested fields, preserving user notes, tags and unset TTL or proxy settings.
 - **Built for automation** — NDJSON output, stable exit codes, and `AbortSignal` support in every SDK call.
@@ -28,7 +28,7 @@ flash-dns turns a project identity and a naming rule into a DNS record: it norma
 2. Normalize the project name and render the hostname from a template — or use an explicit hostname — then validate labels and the zone boundary.
 3. Resolve the Cloudflare zone and read the records already at that name.
 4. Classify the change as `create`, `update`, `noop` or `conflict` from the owner and record values.
-5. For `ensure`, re-check the state, create or patch by ID, read the record back, and return a serializable `ref` for later removal.
+5. For `ensure`, re-check the state, create the record or patch an existing one by ID, read it back, and return a serializable `ref` for later removal.
 
 ## Requirements
 
@@ -379,7 +379,7 @@ Success means the provider API matches the requested record. It does not mean DN
 | `PLAN_STALE` | DNS changed between planning and writing, or after selection. Run `plan` again |
 | `CAPABILITY_UNSUPPORTED` | For example TXT with `proxied`, a manual TTL with `proxied`, or a TTL outside 60–86400 |
 | `RATE_LIMITED` / `REQUEST_TIMEOUT` | Retry later. Reads retry automatically; writes should be retried with `ensure` |
-| Config or naming error (exit `2`) | Run `plan --verbose` to confirm which source each field came from |
+| Config or naming error (exit `2`) | Fix the reported value, then run `plan --verbose` to confirm which source each field came from |
 | `remove` refuses in CI | Add `--yes` and select the record with `--record-id` or a unique hostname |
 | Wildcard certificate issue | `*.` records are allowed, but certificates are not managed here; [Universal SSL](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/) may not cover deep names |
 

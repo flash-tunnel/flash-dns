@@ -16,7 +16,7 @@ flash-dns 把项目身份和命名规则变成一条 DNS 记录：将 `@org-name
 ## 为什么用它
 
 - **一套命名规则，处处一致** — `{project}`、`{branch}`、`{session}` 和自定义变量把项目身份变成可复现的主机名。
-- **不碰不该碰的记录** — 记录带版本化的归属标记；不接管无主记录，不修改其他 owner 的记录，删除只按精确 ID 并核对快照。
+- **不碰不该碰的记录** — 由本工具创建的记录带版本化的归属标记；不接管无主记录，不修改其他 owner 的记录，删除只按精确 ID 并核对快照。
 - **幂等** — `plan` 只读展示 `create` / `update` / `noop` / `conflict`；相同输入再次 `ensure` 不会重复创建，记录 ID 保持不变。
 - **原位更新** — 用 `PATCH` 只改明确要求的字段，保留用户备注、tags 以及未指定的 TTL、代理设置。
 - **面向自动化** — NDJSON 输出、稳定退出码，SDK 的每次调用都支持 `AbortSignal`。
@@ -28,7 +28,7 @@ flash-dns 把项目身份和命名规则变成一条 DNS 记录：将 `@org-name
 2. 标准化项目名，按模板生成主机名（或使用显式主机名），校验标签和 Zone 边界。
 3. 解析 Cloudflare Zone，读取该主机名下已有的记录。
 4. 根据归属和记录内容，判定为 `create`、`update`、`noop` 或 `conflict`。
-5. 执行 `ensure` 时重新复查，按 ID 创建或更新，再读回记录校验，并返回可序列化的 `ref` 供后续删除。
+5. 执行 `ensure` 时重新复查，创建记录或按 ID 更新已有记录，再读回校验，并返回可序列化的 `ref` 供后续删除。
 
 ## 环境要求
 
@@ -379,7 +379,7 @@ await dns.remove(ref, { signal })
 | `PLAN_STALE` | 计划与写入之间（或选择之后）DNS 状态变化；重新执行 `plan` |
 | `CAPABILITY_UNSUPPORTED` | 例如 TXT 配 `proxied`、代理记录配手动指定的 TTL，或 TTL 超出 60–86400 |
 | `RATE_LIMITED` / `REQUEST_TIMEOUT` | 稍后重试。读取会自动重试；写入请重新执行 `ensure` |
-| 配置或命名错误（退出码 `2`） | 运行 `plan --verbose` 确认每个字段来自哪个来源 |
+| 配置或命名错误（退出码 `2`） | 修正报错字段后运行 `plan --verbose`，确认每个字段来自哪个来源 |
 | CI 中 `remove` 被拒绝 | 加 `--yes`，并用 `--record-id` 或唯一主机名选择目标 |
 | 通配符证书问题 | 允许 `*.` 记录，但证书不由本工具管理；[Universal SSL](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/) 可能不覆盖较深层级的域名 |
 
