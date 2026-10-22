@@ -1,5 +1,6 @@
 import type { CliOverrides } from '@flash-dns/core'
 import type { OperationContext, Ownership, RecordRef } from '@flash-dns/types'
+import type { Command } from 'cac'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -13,39 +14,82 @@ import { cac } from 'cac'
 import yoctoSpinner from 'yocto-spinner'
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
-const help = `flash-dns ${version}
-Usage: flash-dns <command> [options]
 
-Commands: init, plan, ensure, list, remove, doctor
+type CommandName = 'init' | 'plan' | 'ensure' | 'list' | 'remove' | 'doctor'
+type TextValue = string | number
 
-Options:
-  --cwd <path>       Working directory
-  --config <path>    Configuration file
-  --zone <domain>    DNS Zone name
-  --zone-id <id>     Cloudflare Zone ID
-  --hostname <name>  Complete hostname
-  --project <name>   Project name
-  --project-id <id>  Stable project identity
-  --template <text>  Naming template
-  --branch <label>   Branch template variable
-  --session <label>  Session template variable
-  --type <type>      A, AAAA, CNAME or TXT
-  --content <text>   Record target or text
-  --ttl <value>      auto or seconds
-  --proxied <value>  true or false
-  --record-id <id>   Select one record
-  --name <name>      list/remove hostname filter
-  --owner-id <id>    list/remove owner ID
-  --owner-application <name>  Owner application (default flash-dns)
-  --json            NDJSON output, no interaction
-  --silent          Suppress human progress output
-  --verbose         Include configuration field sources
-  --no-color        Disable colors
-  --yes             Confirm deletion without interaction
-  --help, --version
+interface CliOptions {
+  cwd?: TextValue
+  config?: TextValue
+  provider?: TextValue
+  zone?: TextValue
+  zoneId?: TextValue
+  hostname?: TextValue
+  project?: TextValue
+  projectId?: TextValue
+  template?: TextValue
+  branch?: TextValue
+  session?: TextValue
+  type?: TextValue
+  content?: TextValue
+  ttl?: TextValue
+  proxied?: TextValue
+  recordId?: TextValue
+  name?: TextValue
+  ownerId?: TextValue
+  ownerApplication?: TextValue
+  json?: boolean
+  silent?: boolean
+  verbose?: boolean
+  yes?: boolean
+  color?: boolean
+  help?: boolean
+  version?: boolean
+}
 
-Credentials: CLOUDFLARE_API_TOKEN (environment only)
-`
+function withConfigOptions(command: Command): Command {
+  return command
+    .option('--cwd <path>', 'Working directory')
+    .option('--config <path>', 'Configuration file')
+}
+
+function withDnsOptions(command: Command): Command {
+  return withConfigOptions(command)
+    .option('--provider <name>', 'DNS provider override')
+    .option('--zone <domain>', 'DNS zone name')
+    .option('--zone-id <id>', 'Cloudflare zone ID')
+    .option('--hostname <name>', 'Complete hostname')
+    .option('--project <name>', 'Project name')
+    .option('--project-id <id>', 'Stable project identity')
+    .option('--template <text>', 'Naming template')
+    .option('--branch <label>', 'Branch template variable')
+    .option('--session <label>', 'Session template variable')
+}
+
+function withRecordOptions(command: Command): Command {
+  return withDnsOptions(command)
+    .option('--type <type>', 'A AAAA CNAME or TXT')
+    .option('--content <text>', 'Record target or text')
+    .option('--ttl <value>', 'auto or seconds')
+    .option('--proxied <value>', 'true or false')
+    .option('--record-id <id>', 'Select one record')
+}
+
+/** cac prints help and version with console.info; capture it so --json and injected streams stay clean. */
+function captureInfo<T>(work: () => T): { result: T, text: string } {
+  let text = ''
+  const info = console.info
+  console.info = (...args: unknown[]): void => {
+    text += `${args.map(value => String(value)).join(' ')}\n`
+  }
+  try {
+    const result = work()
+    return { result, text: text.trimEnd() }
+  }
+  finally {
+    console.info = info
+  }
+}
 
 export function exitCode(error: DnsError): number {
   if (['CONFIG_INVALID', 'NAME_INVALID', 'TEMPLATE_VARIABLE_MISSING'].includes(error.code))
@@ -97,39 +141,16 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
       stdout(`${redact(typeof data === 'string' ? data : JSON.stringify(data, null, 2))}\n`)
   }
   let spinner: ReturnType<typeof yoctoSpinner> | undefined
-  process.on('SIGINT', cancel)
-  process.on('SIGTERM', cancel)
-  try {
-    const parser = cac('flash-dns')
-    const valueOptions = ['cwd', 'config', 'provider', 'zone', 'hostname', 'project', 'project-id', 'template', 'type', 'content', 'ttl', 'zone-id', 'proxied', 'branch', 'session', 'record-id', 'name', 'owner-id', 'owner-application']
-    for (const flag of valueOptions) parser.option(`--${flag} <value>`, flag)
-    for (const flag of ['json', 'silent', 'verbose', 'yes', 'help', 'version', 'no-color']) parser.option(`--${flag}`, flag)
-    let parsed: ReturnType<typeof parser.parse>
-    try {
-      parsed = parser.parse(['node', 'flash-dns', ...argv], { run: false })
-    }
-    catch { throw new DnsError('CONFIG_INVALID', 'Invalid command arguments; use --help') }
-    const flags = parsed.options as Record<string, unknown>
-    const knownFlags = new Set([...valueOptions.map(v => v.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())), 'json', 'silent', 'verbose', 'yes', 'help', 'version', 'color', '--'])
-    if (Object.keys(flags).some(key => !knownFlags.has(key)))
-      throw new DnsError('CONFIG_INVALID', 'Unknown command option; use --help')
-    if (flags.version) {
-      output('version', version)
-      return 0
-    }
-    if (flags.help || !parsed.args.length) {
-      output('help', help)
-      return 0
-    }
-    const command = parsed.args[0]
-    if (parsed.args.length !== 1 || !['init', 'plan', 'ensure', 'list', 'remove', 'doctor'].includes(command!))
-      throw new DnsError('CONFIG_INVALID', 'Unknown command; use --help')
-    const textFlag = (key: string): string | undefined => {
-      if (flags[key] === undefined)
+  let pending: Promise<number> | undefined
+
+  const execute = async (command: CommandName, options: CliOptions): Promise<number> => {
+    const textFlag = (key: keyof CliOptions): string | undefined => {
+      const value = options[key]
+      if (value === undefined)
         return undefined
-      if (typeof flags[key] !== 'string' && typeof flags[key] !== 'number')
-        throw new DnsError('CONFIG_INVALID', `--${key} requires a value`)
-      return String(flags[key])
+      if (typeof value !== 'string' && typeof value !== 'number')
+        throw new DnsError('CONFIG_INVALID', `--${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)} requires a value`)
+      return String(value)
     }
     const cwd = resolve(textFlag('cwd') ?? process.cwd())
     if (command === 'init') {
@@ -146,23 +167,23 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
       return 0
     }
     const loaded = await loadDnsConfig(cwd, textFlag('config'))
-    const cli: CliOverrides = {}
+    const overrides: CliOverrides = {}
     for (const key of ['provider', 'zone', 'hostname', 'project', 'projectId', 'template', 'type', 'content', 'ttl', 'zoneId', 'branch', 'session'] as const) {
       const value = textFlag(key)
       if (value !== undefined)
-        cli[key] = value
+        overrides[key] = value
     }
-    if (flags.proxied !== undefined) {
-      if (!['true', 'false'].includes(String(flags.proxied)))
+    if (options.proxied !== undefined) {
+      if (!['true', 'false'].includes(String(options.proxied)))
         throw new DnsError('CONFIG_INVALID', '--proxied requires true or false')
-      cli.proxied = String(flags.proxied) === 'true'
+      overrides.proxied = String(options.proxied) === 'true'
     }
     // Read-only commands and exact-ID removal do not need project-name detection.
-    if (['doctor', 'list'].includes(command!) || (command === 'remove' && textFlag('recordId')))
-      cli.hostname ??= textFlag('name') ?? cli.zone ?? env.FLASH_DNS_ZONE ?? loaded.config.zone
+    if (['doctor', 'list'].includes(command) || (command === 'remove' && textFlag('recordId')))
+      overrides.hostname ??= textFlag('name') ?? overrides.zone ?? env.FLASH_DNS_ZONE ?? loaded.config.zone
     else if (command === 'remove' && textFlag('name'))
-      cli.hostname = textFlag('name')
-    const config = resolveDnsConfig({ cwd, config: loaded.config, configFile: loaded.source, env, cli })
+      overrides.hostname = textFlag('name')
+    const config = resolveDnsConfig({ cwd, config: loaded.config, configFile: loaded.source, env, cli: overrides })
     const adapter = createCloudflareAdapter({ apiToken: env.CLOUDFLARE_API_TOKEN ?? '', zoneId: config.zoneId, fetcher: runtime.fetcher })
     const manager = createDnsManager({ adapter })
     if (interactive && !silent)
@@ -172,7 +193,7 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
       desired.recordId = textFlag('recordId')
       const result = command === 'plan' ? await manager.plan(desired, context) : await manager.ensure(desired, context)
       spinner?.stop()
-      output(command, flags.verbose ? { ...result, sources: config.sources } : result)
+      output(command, options.verbose ? { ...result, sources: config.sources } : result)
       if ('conflict' in result && result.conflict)
         return exitCode(new DnsError(result.conflict.code, result.conflict.message))
     }
@@ -199,7 +220,7 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
         else {
           if (!owner)
             throw new DnsError('CONFIG_INVALID', 'remove requires project.id or --owner-id')
-          if (!recordId && !textFlag('name') && !cli.hostname && !loaded.config.hostname && !loaded.config.naming?.template)
+          if (!recordId && !textFlag('name') && !overrides.hostname && !loaded.config.hostname && !loaded.config.naming?.template)
             throw new DnsError('CONFIG_INVALID', 'remove requires --record-id or an explicit hostname/template selector')
           if (records.some(record => !sameOwner(record.ownership, owner)) && (recordId || !filtered.length))
             throw new DnsError('OWNERSHIP_MISMATCH', 'Selected record has a different owner')
@@ -207,7 +228,7 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
             throw new DnsError('RECORD_NOT_FOUND', 'Record ID does not match all supplied selectors')
           if (filtered.length > 1)
             throw new DnsError('AMBIGUOUS_RECORD', 'Select exactly one record using --record-id')
-          if (!interactive && !flags.yes)
+          if (!interactive && !options.yes)
             throw new DnsError('CONFIG_INVALID', 'Non-interactive remove requires --yes')
           const record = filtered[0]
           const target: RecordRef = {
@@ -217,7 +238,7 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
             owner,
             ...(record ? { snapshot: { name: record.name, type: record.type, content: record.content } } : {})
           }
-          if (!flags.yes && record) {
+          if (!options.yes && record) {
             const message = `Delete ${record.type} ${record.name} → ${record.content} (ID ${record.id}, owner ${owner.application}/${owner.id})?`
             const accepted = runtime.confirm ? await runtime.confirm(message) : await promptConfirm({ message }, { signal })
             if (!accepted)
@@ -228,6 +249,80 @@ export async function runCli(argv = process.argv.slice(2), runtime: RunCliOption
       }
     }
     return 0
+  }
+
+  const dispatch = (command: CommandName, options: CliOptions): void => {
+    if (options.help || options.version)
+      return
+    pending = execute(command, options)
+  }
+
+  process.on('SIGINT', cancel)
+  process.on('SIGTERM', cancel)
+  try {
+    const cli = cac('flash-dns')
+
+    cli.option('--json', 'NDJSON output with no interaction')
+    cli.option('--silent', 'Suppress human progress output')
+    cli.option('--no-color', 'Disable colors')
+
+    withConfigOptions(cli.command('init', 'Create a starter config file'))
+      .action((options: CliOptions = {}): void => dispatch('init', options))
+
+    withRecordOptions(cli.command('plan', 'Preview DNS changes without writing'))
+      .option('--verbose', 'Include configuration field sources')
+      .action((options: CliOptions = {}): void => dispatch('plan', options))
+
+    withRecordOptions(cli.command('ensure', 'Create or update the managed DNS record'))
+      .option('--verbose', 'Include configuration field sources')
+      .action((options: CliOptions = {}): void => dispatch('ensure', options))
+
+    withDnsOptions(cli.command('list', 'List records for the configured selector'))
+      .option('--name <name>', 'Hostname filter')
+      .option('--owner-id <id>', 'Owner ID filter')
+      .option('--owner-application <name>', 'Owner application (default flash-dns)')
+      .action((options: CliOptions = {}): void => dispatch('list', options))
+
+    withDnsOptions(cli.command('remove', 'Delete one record owned by the project'))
+      .option('--record-id <id>', 'Select one record')
+      .option('--name <name>', 'Hostname filter')
+      .option('--owner-id <id>', 'Owner ID filter')
+      .option('--owner-application <name>', 'Owner application (default flash-dns)')
+      .option('--yes', 'Confirm deletion without interaction')
+      .action((options: CliOptions = {}): void => dispatch('remove', options))
+
+    withDnsOptions(cli.command('doctor', 'Check credentials zone and DNS access'))
+      .action((options: CliOptions = {}): void => dispatch('doctor', options))
+
+    cli.help()
+    cli.version(version)
+
+    const { result: parsed, text: printed } = captureInfo(() => {
+      try {
+        return cli.parse(['node', 'flash-dns', ...argv])
+      }
+      catch {
+        return undefined
+      }
+    })
+    if (!parsed)
+      throw new DnsError('CONFIG_INVALID', 'Invalid command arguments; use --help')
+    const flags = parsed.options as Record<string, unknown>
+    if (flags.version) {
+      output('version', version)
+      return 0
+    }
+    if (flags.help) {
+      output('help', printed)
+      return 0
+    }
+    if (!cli.matchedCommand) {
+      if (parsed.args.length)
+        throw new DnsError('CONFIG_INVALID', 'Unknown command; use --help')
+      output('help', captureInfo(() => cli.outputHelp()).text)
+      return 0
+    }
+    return pending ? await pending : 0
   }
   catch (cause) {
     spinner?.stop()

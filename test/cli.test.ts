@@ -36,6 +36,16 @@ describe('cLI', () => {
     expect(result.events[0]).toMatchObject({ event: 'help' })
     expect(result.f.calls).toHaveLength(0)
   })
+  it('renders help from the command metadata', async () => {
+    const result = await run(['--help'])
+    const text = result.events[0].data as string
+    for (const command of ['init', 'plan', 'ensure', 'list', 'remove', 'doctor'])
+      expect(text).toMatch(new RegExp(`^ {2}${command}\\s`, 'm'))
+    const init = await run(['init', '--help'])
+    expect(init.events[0].data).toContain('$ flash-dns init')
+    const list = await run(['list', '--help'])
+    expect(list.events[0].data).toContain('--owner-application <name>')
+  })
   it('init creates one stable identity and refuses to overwrite it', async () => {
     const cwd = await fixture()
     expect((await run(['init'], undefined, cwd)).code).toBe(0)
