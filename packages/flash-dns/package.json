@@ -1,7 +1,7 @@
 {
   "name": "flash-dns",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Project-based DNS management with a CLI and programmable SDK.",
   "license": "MIT",
   "homepage": "https://github.com/flash-tunnel/flash-dns#readme",
