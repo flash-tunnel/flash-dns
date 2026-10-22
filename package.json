@@ -25,11 +25,13 @@
     "test": "vitest run",
     "test:pack": "node scripts/pack-smoke.mjs",
     "check": "pnpm build && pnpm lint && pnpm typecheck && pnpm test && pnpm test:pack",
+    "release": "bumpp -r",
     "prepare": "simple-git-hooks"
   },
   "devDependencies": {
     "@antfu/eslint-config": "9.5.1",
     "@types/node": "26.6.5",
+    "bumpp": "^12.3.0",
     "defu": "6.1.7",
     "eslint": "10.13.0",
     "nano-staged": "1.0.2",
