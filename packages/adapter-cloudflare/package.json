@@ -1,0 +1,44 @@
+{
+  "name": "@flash-dns/adapter-cloudflare",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Cloudflare DNS CRUD adapter with pagination and ownership metadata.",
+  "license": "MIT",
+  "homepage": "https://github.com/flash-tunnel/flash-dns#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flash-tunnel/flash-dns.git",
+    "directory": "packages/adapter-cloudflare"
+  },
+  "bugs": {
+    "url": "https://github.com/flash-tunnel/flash-dns/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "unbuild",
+    "stub": "unbuild --stub",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flash-dns/types": "workspace:*"
+  }
+}

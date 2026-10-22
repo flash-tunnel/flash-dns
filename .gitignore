@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.eslintcache
+.artifacts/
+*.log
+.env
+.env.*
+!.env.example

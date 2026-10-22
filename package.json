@@ -1,0 +1,47 @@
+{
+  "name": "flash-dns-monorepo",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.14.0",
+  "license": "MIT",
+  "homepage": "https://github.com/flash-tunnel/flash-dns#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flash-tunnel/flash-dns.git"
+  },
+  "bugs": {
+    "url": "https://github.com/flash-tunnel/flash-dns/issues"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "stub": "pnpm -r run stub",
+    "lint": "eslint --cache",
+    "lint:fix": "eslint --cache --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:pack": "node scripts/pack-smoke.mjs",
+    "check": "pnpm build && pnpm lint && pnpm typecheck && pnpm test && pnpm test:pack",
+    "prepare": "simple-git-hooks"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "9.5.1",
+    "@types/node": "26.6.5",
+    "defu": "6.1.7",
+    "eslint": "10.13.0",
+    "nano-staged": "1.0.2",
+    "simple-git-hooks": "2.14.0",
+    "typescript": "5.9.3",
+    "unbuild": "3.6.1",
+    "vitest": "5.0.5"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm nano-staged"
+  },
+  "nano-staged": {
+    "*.{ts,js,mjs,cjs,json,jsonc,md,yml,yaml}": "eslint --cache --fix"
+  }
+}

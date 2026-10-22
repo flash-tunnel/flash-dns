@@ -1,0 +1,54 @@
+{
+  "name": "flash-dns",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Project-based DNS management with a CLI and programmable SDK.",
+  "license": "MIT",
+  "homepage": "https://github.com/flash-tunnel/flash-dns#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flash-tunnel/flash-dns.git",
+    "directory": "packages/flash-dns"
+  },
+  "bugs": {
+    "url": "https://github.com/flash-tunnel/flash-dns/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./config": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "bin": {
+    "flash-dns": "./bin/flash-dns.mjs"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "unbuild",
+    "stub": "unbuild --stub",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flash-dns/cli": "workspace:*",
+    "@flash-dns/config": "workspace:*"
+  }
+}

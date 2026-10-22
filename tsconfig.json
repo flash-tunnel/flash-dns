@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "moduleDetection": "force",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@flash-dns/types": [
+        "./packages/types/src/index.ts"
+      ],
+      "@flash-dns/config": [
+        "./packages/config/src/index.ts"
+      ],
+      "@flash-dns/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@flash-dns/adapter-cloudflare": [
+        "./packages/adapter-cloudflare/src/index.ts"
+      ],
+      "@flash-dns/cli": [
+        "./packages/cli/src/index.ts"
+      ],
+      "flash-dns": [
+        "./packages/flash-dns/src/index.ts"
+      ]
+    },
+    "resolveJsonModule": true,
+    "types": [
+      "node"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "eslint.config.ts",
+    "vitest.config.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "**/dist/**",
+    "**/node_modules/**"
+  ]
+}
