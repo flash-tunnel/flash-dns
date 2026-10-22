@@ -11,25 +11,27 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const artifacts = join(root, '.artifacts', 'packs')
 const pnpm = process.env.npm_execpath
 assert(pnpm, 'Run this script with pnpm run test:pack')
-const pnpmCommand = /\.[cm]?js$/.test(pnpm) ? [process.execPath, pnpm] : [pnpm]
+const pnpmCommand: [string, ...string[]] = /\.[cm]?js$/.test(pnpm) ? [process.execPath, pnpm] : [pnpm]
 const cleanEnv = { ...process.env, CLOUDFLARE_API_TOKEN: '', CI: '1', NO_COLOR: '1' }
 
-function execute(command, args, cwd, expected = 0) {
-  const result = spawnSync(command, args, { cwd, env: cleanEnv, encoding: 'utf8', timeout: 180000 })
+function execute(command: string, args: string[], cwd: string, expected = 0): string {
+  const result = spawnSync(command, args, { cwd, env: cleanEnv, encoding: 'utf8', timeout: 180_000 })
   assert.equal(result.status, expected, `${command} ${args.join(' ')}\n${result.error ?? ''}\n${result.stdout}\n${result.stderr}`)
   return result.stdout
 }
-function runPnpm(args, cwd, expected = 0) {
+function runPnpm(args: string[], cwd: string, expected = 0): string {
   return execute(pnpmCommand[0], [...pnpmCommand.slice(1), ...args], cwd, expected)
 }
 
-async function main() {
+async function main(): Promise<void> {
   await mkdir(artifacts, { recursive: true })
   const packages = ['types', 'config', 'core', 'adapter-cloudflare', 'cli', 'flash-dns']
-  const tarballs = {}
+  const versions: Record<string, string> = {}
+  const tarballs: Record<string, string> = {}
   for (const directory of packages) {
     const location = join(root, 'packages', directory)
     const pkg = JSON.parse(await readFile(join(location, 'package.json'), 'utf8'))
+    versions[pkg.name] = pkg.version
     assert.equal(pkg.license, 'MIT')
     assert.equal(pkg.repository.type, 'git')
     assert.equal(pkg.repository.url, 'git+https://github.com/flash-tunnel/flash-dns.git')
@@ -46,15 +48,21 @@ async function main() {
     assert(files.some(file => file.endsWith('dist/index.d.mts')))
     assert(files.some(file => file.endsWith('LICENSE')))
     const packedManifest = JSON.parse(execute('tar', ['-xOf', tarball, 'package/package.json'], root))
-    assert(!Object.values(packedManifest.dependencies ?? {}).some(value => value.startsWith('workspace:')))
+    const packedDependencies: Record<string, string> = packedManifest.dependencies ?? {}
+    assert(!Object.values(packedDependencies).some(value => value.startsWith('workspace:')))
     assert(!files.some(file => /(?:^|\/)(?:src|test|node_modules|\.env|ai-docs)(?:\/|$)/.test(file)), `Unexpected source or private files in ${pkg.name}`)
     if (directory === 'flash-dns')
       assert(files.includes('package/bin/flash-dns.mjs'))
     tarballs[pkg.name] = `file:${tarball.replaceAll('\\', '/')}`
   }
   const temp = await mkdtemp(join(tmpdir(), 'flash-dns-pack-'))
+  const tarballUrl = (name: string): string => {
+    const url = tarballs[name]
+    assert(url, `Missing tarball for ${name}`)
+    return url
+  }
   try {
-    const install = async (name, dependencies) => {
+    const install = async (name: string, dependencies: Record<string, string>): Promise<string> => {
       const dir = join(temp, name)
       await mkdir(dir)
       await writeFile(join(dir, 'package.json'), `${JSON.stringify({ name: `smoke-${name}`, private: true, type: 'module', dependencies }, null, 2)}\n`)
@@ -62,7 +70,7 @@ async function main() {
       runPnpm(['install', '--ignore-scripts', '--prefer-offline'], dir)
       return dir
     }
-    const sdk = await install('sdk', { '@flash-dns/core': tarballs['@flash-dns/core'], '@flash-dns/adapter-cloudflare': tarballs['@flash-dns/adapter-cloudflare'] })
+    const sdk = await install('sdk', { '@flash-dns/core': tarballUrl('@flash-dns/core'), '@flash-dns/adapter-cloudflare': tarballUrl('@flash-dns/adapter-cloudflare') })
     const smoke = `import assert from 'node:assert/strict'
 import { createDnsManager, normalizeProjectName } from '@flash-dns/core'
 import { createCloudflareAdapter } from '@flash-dns/adapter-cloudflare'
@@ -74,9 +82,9 @@ assert.equal(typeof createDnsManager({ adapter: createCloudflareAdapter({ apiTok
     assert(!existsSync(join(sdk, 'node_modules', '@flash-dns', 'cli')), 'SDK unexpectedly installed CLI')
     const virtualStore = await readdir(join(sdk, 'node_modules', '.pnpm'))
     assert(!virtualStore.some(name => name.startsWith('@flash-dns+cli') || name.startsWith('yocto-spinner') || name.startsWith('@inquirer+')))
-    const cli = await install('cli', { 'flash-dns': tarballs['flash-dns'], '@flash-dns/core': tarballs['@flash-dns/core'], '@flash-dns/adapter-cloudflare': tarballs['@flash-dns/adapter-cloudflare'] })
+    const cli = await install('cli', { 'flash-dns': tarballUrl('flash-dns'), '@flash-dns/core': tarballUrl('@flash-dns/core'), '@flash-dns/adapter-cloudflare': tarballUrl('@flash-dns/adapter-cloudflare') })
     assert.match(runPnpm(['exec', 'flash-dns', '--help'], cli), /init, plan, ensure, list, remove, doctor/)
-    assert.equal(runPnpm(['exec', 'flash-dns', '--version'], cli).trim(), '0.1.0')
+    assert.equal(runPnpm(['exec', 'flash-dns', '--version'], cli).trim(), versions['flash-dns'])
     await writeFile(join(cli, 'imports.mjs'), 'import { defineConfig } from \'flash-dns\'; import { defineConfig as config } from \'flash-dns/config\'; if (defineConfig({}).zone !== config({}).zone) throw new Error(\'config mismatch\')\n')
     execute(process.execPath, ['imports.mjs'], cli)
     await writeFile(join(cli, 'types.mts'), `import { defineConfig } from 'flash-dns'

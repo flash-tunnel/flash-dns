@@ -1,7 +1,7 @@
 import type { CliOverrides } from '@flash-dns/core'
 import type { OperationContext, Ownership, RecordRef } from '@flash-dns/types'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
@@ -12,7 +12,7 @@ import { confirm as promptConfirm } from '@inquirer/prompts'
 import { cac } from 'cac'
 import yoctoSpinner from 'yocto-spinner'
 
-const version = '0.1.0'
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
 const help = `flash-dns ${version}
 Usage: flash-dns <command> [options]
 
