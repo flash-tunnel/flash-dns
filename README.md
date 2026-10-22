@@ -1,94 +1,293 @@
 # flash-dns
 
-根据项目名称和命名规则管理 DNS 记录，同时提供 CLI 和 SDK。首版支持 Cloudflare 的 A、AAAA、CNAME、TXT；Tunnel、应用部署和证书由调用方管理。
+**Project-based DNS records for automated deployments.**
 
-需要 Node.js >=22.14。当前版本为 0.1.0，尚未发布到 npm。
+flash-dns turns a project identity and a naming rule into a DNS record: it normalizes `@org-name/project-name` to `org-name-project-name`, renders a hostname such as `org-name-project-name.preview.example.com`, and reconciles A / AAAA / CNAME / TXT records through a provider adapter. Use the CLI in a terminal or embed the SDK in a deployment tool. flash-dns manages authoritative DNS records only — it is not a resolver, a tunnel manager, or a deployment system.
 
-## 本地开发
+**English** | [简体中文](https://github.com/flash-tunnel/flash-dns/blob/main/README_CN.md)
 
-```sh
-pnpm install --frozen-lockfile
-pnpm run build
-node packages/flash-dns/bin/flash-dns.mjs --help
-pnpm run lint
-pnpm run typecheck
-pnpm run test
-pnpm run test:pack
+[![npm version](https://img.shields.io/npm/v/flash-dns?style=flat-square&color=blue)](https://www.npmjs.com/package/flash-dns)
+[![npm downloads](https://img.shields.io/npm/dm/flash-dns?style=flat-square)](https://www.npmjs.com/package/flash-dns)
+[![license](https://img.shields.io/npm/l/flash-dns?style=flat-square)](https://github.com/flash-tunnel/flash-dns/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/flash-dns?style=flat-square)](https://www.npmjs.com/package/flash-dns)
+
+> Early preview (`0.1.x`). The core is provider-agnostic, but Cloudflare is the only adapter today. Review changes with `plan` before using it in production.
+
+## Why flash-dns
+
+- **One naming rule everywhere** — `{project}`, `{branch}`, `{session}` and custom variables turn a project identity into a repeatable hostname.
+- **Safe with existing DNS** — records carry a versioned owner marker. Unmanaged records are never adopted, foreign-owned records are never modified, and deletion is by exact ID with a snapshot check.
+- **Idempotent by design** — `plan` shows `create` / `update` / `noop` / `conflict` without writing. A second `ensure` with the same input is a no-op and keeps the record ID.
+- **Updates in place** — `PATCH` changes only the requested fields, preserving user notes, tags and unset TTL or proxy settings.
+- **Built for automation** — NDJSON output, stable exit codes, and `AbortSignal` support in every SDK call.
+- **Clear boundary** — DNS only: no tunnels, app processes, certificates, or implicit cleanup on exit.
+
+## How it works
+
+1. Load settings from CLI flags, environment variables and the config file, in that order.
+2. Normalize the project name and render the hostname from a template — or use an explicit hostname — then validate labels and the zone boundary.
+3. Resolve the Cloudflare zone and read the records already at that name.
+4. Classify the change as `create`, `update`, `noop` or `conflict` from the owner and record values.
+5. For `ensure`, re-check the state, create or patch by ID, read the record back, and return a serializable `ref` for later removal.
+
+## Requirements
+
+- Node.js **>= 22.14**
+- A Cloudflare account, an active zone, and an API token with DNS access to it
+- No `cloudflared` or other external binary
+
+## Install
+
+```bash
+# Run without installing
+npx flash-dns --help
+
+# Install the CLI globally
+npm install -g flash-dns
+
+# Pin a version in a project (recommended for CI)
+pnpm add -D flash-dns
 ```
 
-也可用 `pnpm run stub` 生成开发入口。`test:pack` 会安装本地产物到临时目录，可能从 registry 下载运行依赖，不会访问 DNS API。CI 配置覆盖 Windows / Linux 和 Node 22.14 / 24；本地验证结果见 [开发报告](ai-docs/implementation-report.md)。
+For the SDK, install the core and the adapter you need:
 
-## CLI
-
-```sh
-flash-dns init
+```bash
+pnpm add @flash-dns/core @flash-dns/adapter-cloudflare
 ```
 
-将生成配置中的示例 Zone、模板和记录内容改成实际值。`init` 生成并持久保存稳定的 `project.id`，不会覆盖已有目标文件。
+## Quick start
+
+```bash
+# macOS / Linux
+export CLOUDFLARE_API_TOKEN=your_token_here
+
+# Windows PowerShell
+$env:CLOUDFLARE_API_TOKEN = "your_token_here"
+```
+
+Create a config with a stable project identity:
+
+```bash
+npx flash-dns init
+```
+
+Then set the zone, naming rule and record target:
 
 ```ts
+// flash-dns.config.ts
 import { defineConfig } from 'flash-dns'
 
 export default defineConfig({
-  provider: 'cloudflare',
-  zone: 'acewill.dev',
+  zone: 'example.com',
   project: {
     name: '@org-name/project-name',
     id: 'gitlab:acewill/slides/project-name'
   },
-  naming: { template: '{project}.slidev.acewill.dev' },
-  record: { type: 'A', content: '192.0.2.1', ttl: 'auto' },
-  providers: { cloudflare: { zoneId: 'your-zone-id', proxied: false } }
+  naming: { template: '{project}.preview.example.com' },
+  record: { type: 'A', content: '192.0.2.1' }
 })
 ```
 
-上述命名得到 `org-name-project-name.slidev.acewill.dev`。`192.0.2.1` 是文档示例地址。
+This config manages `org-name-project-name.preview.example.com`.
 
-凭据只通过环境变量 `CLOUDFLARE_API_TOKEN` 提供，不接受 token 命令行参数或配置字段。令牌按目标 Zone 分配 DNS 读取/编辑权限；通过名称发现 Zone 时还需相应 Zone 读取权限。固定 Zone ID 时仍会读取并校验 Zone 名称和状态。
-
-```sh
-flash-dns plan
-flash-dns ensure --json
-flash-dns list --name org-name-project-name.slidev.acewill.dev
-flash-dns doctor
-flash-dns remove --record-id RECORD_ID --yes
+```bash
+npx flash-dns plan     # read-only: shows create / update / noop / conflict
+npx flash-dns ensure   # reconcile the record
+npx flash-dns doctor   # verify token, zone and DNS read access
 ```
 
-`remove` 需要配置中的 `project.id` 或显式 `--owner-id`，通过名称选择时要求唯一目标。默认 owner application 为 `flash-dns`，可通过 `--owner-application` 选择 SDK 创建的记录。交互删除显示目标并确认；CI、JSON 和非 TTY 模式要求 `--yes`。退出进程不触发删除。
+`init` generates `project.id` once and refuses to overwrite an existing file. Keep that ID stable: it is the record's owner identity. `192.0.2.1` is a documentation address.
 
-`plan` 查询当前状态并显示 create / update / noop / conflict，不写 DNS。`ensure` 会重新规划、在执行前复查，并读取服务商状态确认结果。`doctor` 只检查真实读取能力，不测试写权限。无命令时显示帮助。
+## Commands
 
-`--json` 输出 NDJSON，一次命令输出一个包含 `event`、`requestId`、`data` 的结果或错误对象；冲突的 plan 也保留完整计划并返回非零退出码。`--silent` 抑制人类输出，JSON 结果仍保留。`--verbose` 在 plan/ensure 结果中附上字段来源。默认人类输出为结构化 JSON 文本，TTY 操作期间显示 spinner，不使用彩色结果文本。
-
-退出码：0 成功，1 服务商/内部错误，2 配置/参数，3 冲突/归属/过期状态，4 认证/权限，5 能力/适配器，6 Zone/记录定位，7 超时/限流耗尽，130 取消。
-
-## 配置与命名
-
-默认发现 `flash-dns.config.ts`，也支持 mts、js、mjs、json；向上查找到 Git 根或文件系统根为止。`--config` 按 `--cwd` 解析显式路径。项目 package.json 发现以配置文件所在目录为基准；SDK 可直接传完整 hostname，完全绕过发现过程。
-
-优先级为 CLI > 环境变量 > 文件 > 默认/自动发现。未填写 TTL 时，创建使用自动 TTL，更新保留现有值。代理开关仅在显式指定时修改。配置是可信代码，会在加载时执行。
-
-| 环境变量 | 对应值 |
+| Command | Description |
 | --- | --- |
-| FLASH_DNS_PROVIDER | provider |
-| FLASH_DNS_ZONE | zone |
-| FLASH_DNS_HOSTNAME | hostname |
-| FLASH_DNS_PROJECT | project.name |
-| FLASH_DNS_PROJECT_ID | project.id |
-| FLASH_DNS_TEMPLATE | naming.template |
-| FLASH_DNS_BRANCH / FLASH_DNS_SESSION | 模板变量 |
-| FLASH_DNS_TYPE / FLASH_DNS_CONTENT / FLASH_DNS_TTL | 记录类型、内容、TTL |
-| FLASH_DNS_PROXIED | true 或 false |
-| CLOUDFLARE_ZONE_ID | providers.cloudflare.zoneId |
-| CLOUDFLARE_API_TOKEN | 适配器凭据，不进入配置结果 |
+| `flash-dns init` | Create `flash-dns.config.ts` with a generated `project.id`; never overwrites |
+| `flash-dns plan` | Show the effective hostname, target record and `create` / `update` / `noop` / `conflict`; never writes |
+| `flash-dns ensure` | Reconcile one record; re-checks before writing and verifies the result |
+| `flash-dns list` | List records in the zone, filtered by `--name` and/or `--owner-id` |
+| `flash-dns remove` | Delete exactly one matching, owned record; idempotent when already absent |
+| `flash-dns doctor` | Check config, token, zone and DNS read access; does not test writes |
 
-`--hostname` 优先于模板。变量包括 project、branch、session 和 `variables` 中的自定义字段；仅在模板引用 branch 时尝试读取 Git 分支。变量必须是单个合法 ASCII DNS 标签；分支名中的 `/` 不会被自动替换。显式 hostname 支持 `*.` 前缀，所有 hostname 均检查 Zone 标签边界。
+Interactive `remove` prints the target record and asks for confirmation; non-interactive runs require `--yes`. Running `flash-dns` with no command prints help and exits `0`.
 
-scoped 项目名去掉前导 `@`、把 `/` 改成 `-` 并转小写。其余非法字符和超过 63 字符的标签会报错，不会自动截断。不同原名可以映射到同名，资源归属始终依赖独立的 owner。
+## Options
+
+Options override environment variables and config values. `flash-dns --help` prints the built-in list.
+
+### Common options
+
+| Option | Description |
+| --- | --- |
+| `--cwd <dir>` | Working directory and config discovery base |
+| `--config <path>` | Explicit config file, resolved from `--cwd` |
+| `--json` | Emit NDJSON and disable prompts and spinners |
+| `--silent` | Suppress human output |
+| `--verbose` | Add field sources to `plan` and `ensure` output |
+| `--no-color` | Disable colors |
+| `--yes` | Skip confirmation prompts (required for non-interactive `remove`) |
+| `--help`, `--version` | Print help or version |
+
+### Selection and record options
+
+| Option | Description |
+| --- | --- |
+| `--provider <name>` | Provider ID; only `cloudflare` is supported |
+| `--zone <domain>` | Zone name, for example `example.com` |
+| `--zone-id <id>` | Cloudflare zone ID; skips lookup by name |
+| `--hostname <fqdn>` | Complete hostname; takes precedence over the template |
+| `--project <name>` | Project name used by `{project}` |
+| `--project-id <id>` | Stable owner ID |
+| `--template <text>` | Naming template |
+| `--branch <label>` | Value for `{branch}`; otherwise read from Git |
+| `--session <label>` | Value for `{session}` |
+| `--type <type>` | `A`, `AAAA`, `CNAME` or `TXT` |
+| `--content <text>` | Record content |
+| `--ttl <value>` | `auto` or a number of seconds |
+| `--proxied <value>` | `true` or `false`; Cloudflare proxy only |
+| `--record-id <id>` | Select one existing record |
+| `--name <fqdn>` | Hostname filter for `list`; selector for `remove` |
+| `--owner-id <id>` | Owner ID filter for `list`; owner selector for `remove` |
+| `--owner-application <name>` | Owner application for `list` and `remove` (default `flash-dns`) |
+
+## Configuration
+
+flash-dns looks for `flash-dns.config.{ts,mts,js,mjs,json}` in the working directory, then upward until the Git root or the filesystem root. `--config` selects a file explicitly.
+
+Precedence: **CLI > environment variables > config file > auto-detection and defaults.** Explicit `false` and `0` are real values, not "unset".
+
+```ts
+// flash-dns.config.ts
+import { defineConfig } from 'flash-dns'
+
+export default defineConfig({
+  provider: 'cloudflare',
+  zone: 'example.com',
+
+  // hostname: 'preview.example.com', // wins over naming.template
+  project: {
+    name: '@org-name/project-name',
+    id: 'gitlab:acewill/slides/project-name'
+  },
+
+  naming: { template: '{project}.{namespace}.example.com' },
+  variables: { namespace: 'preview' },
+
+  record: {
+    type: 'CNAME',
+    content: 'target.example.com',
+    ttl: 'auto'
+  },
+
+  providers: {
+    cloudflare: {
+      zoneId: 'optional-zone-id',
+      proxied: false
+    }
+  }
+})
+```
+
+- `provider` defaults to `cloudflare`; no other provider is available yet.
+- `zone` is required, and the zone must be active in Cloudflare.
+- `project.id` is the stable owner identity. `plan` and `ensure` require it; `remove` accepts it or `--owner-id`.
+- `project.name` fills `{project}`. When omitted, it comes from `package.json` in the config directory, then the directory name.
+- `naming.template` defaults to `{project}` plus the zone name.
+- `hostname` bypasses the template and variables but is still validated.
+- `variables` supplies custom template values.
+- `record.type` and `record.content` are required for `plan` and `ensure`.
+- `record.ttl` accepts `auto` or a number of seconds.
+- `providers.cloudflare.zoneId` is optional; without it, the zone is resolved by name.
+- `providers.cloudflare.proxied` is only applied when explicitly set.
+
+Unknown fields are rejected. The config file is trusted code and is executed when loaded, so do not load untrusted config files.
+
+### Environment variables
+
+| Variable | Maps to |
+| --- | --- |
+| `FLASH_DNS_PROVIDER` | `provider` |
+| `FLASH_DNS_ZONE` | `zone` |
+| `FLASH_DNS_HOSTNAME` | `hostname` |
+| `FLASH_DNS_PROJECT` | `project.name` |
+| `FLASH_DNS_PROJECT_ID` | `project.id` |
+| `FLASH_DNS_TEMPLATE` | `naming.template` |
+| `FLASH_DNS_BRANCH` | `{branch}` value |
+| `FLASH_DNS_SESSION` | `{session}` value |
+| `FLASH_DNS_TYPE` | `record.type` |
+| `FLASH_DNS_CONTENT` | `record.content` |
+| `FLASH_DNS_TTL` | `record.ttl` |
+| `FLASH_DNS_PROXIED` | `providers.cloudflare.proxied`; `true` or `false` |
+| `CLOUDFLARE_ZONE_ID` | `providers.cloudflare.zoneId` |
+| `CLOUDFLARE_API_TOKEN` | Adapter credential; never enters the resolved config |
+
+### Naming rules
+
+`{project}`, `{branch}`, `{session}` and any key in `variables` are available in templates. Only `{project}` is normalized automatically.
+
+| Input | Label |
+| --- | --- |
+| `@org-name/project-name` | `org-name-project-name` |
+| `@Org/Project` | `org-project` |
+
+Different inputs can produce the same label, for example `@org/name` and `org-name`. They are still separate projects: ownership always uses `project.id`, and a matching label with a different owner is a conflict, not a silent takeover.
+
+A label is 1–63 characters long, may contain lowercase letters, digits and hyphens, and must start and end with a letter or digit. Other characters and over-long labels fail instead of being rewritten or truncated.
+
+- `{branch}` is read with `git branch --show-current` only when the template references it. Pass `--branch` or `FLASH_DNS_BRANCH` in CI.
+- Every template value must be a single valid label. A branch named `feat/login` must be passed as `feat-login`; slashes are not rewritten.
+- An explicit hostname may start with `*.`; template variables cannot inject a wildcard or an extra level.
+- The hostname must be the zone itself or end with `.${zone}`; a plain string suffix such as `badexample.com` is rejected.
+- Templates do not add random suffixes. Supply a stable session or branch value so `plan`, `ensure` and `remove` address the same name.
+
+### TTL and proxy
+
+On create, an unset TTL means automatic. On update, an unset TTL keeps the current value. Supported values are `auto` or 60–86400 seconds.
+
+`proxied` is a Cloudflare extension. It is only changed when you set it; proxied records require automatic TTL, and TXT records reject the option. An explicit `false` is preserved.
+
+## Cloudflare access
+
+Create a **Custom token** at <https://dash.cloudflare.com/profile/api-tokens> with:
+
+| Permission | Purpose |
+| --- | --- |
+| Zone · DNS · Edit | Read, create, update and delete records in the zone |
+| Zone · Zone · Read | Resolve the zone by name, or validate a fixed zone ID |
+
+Scope the token to the zones you manage and set an expiry. A fixed `zoneId` is still read and validated, so Zone Read is required either way. The dashboard may label `Edit` as `Write`; they mean the same thing.
+
+## Output and exit codes
+
+`--json` writes one NDJSON object per line to stdout and disables prompts and spinners:
+
+```json
+{ "event": "ensure", "requestId": "...", "data": { "action": "created", "record": { "id": "..." }, "ref": { "recordId": "..." } } }
+```
+
+Events are `init`, `plan`, `ensure`, `list`, `remove`, `doctor`, `error`, `help` and `version`. A conflict plan still includes the full plan and exits with code `3`.
+
+Without `--json`, results are printed as structured JSON text and a spinner runs on stderr in a TTY. `--silent` suppresses human output; `--json` output is still produced. `--verbose` adds configuration field sources to `plan` and `ensure` results.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success, including `noop` and `already-absent` |
+| `1` | Uncategorized internal or provider error |
+| `2` | Config, naming or argument error |
+| `3` | Conflict, ownership mismatch, ambiguous target or stale plan |
+| `4` | Authentication or permission error |
+| `5` | Unsupported capability or incompatible adapter |
+| `6` | Zone or record lookup failure |
+| `7` | Rate limit or timeout budget exhausted |
+| `130` | Cancelled |
 
 ## SDK
 
-只依赖 `@flash-dns/core` 和 `@flash-dns/adapter-cloudflare` 即可使用，不引入 CLI、spinner 或交互依赖。
+Install the core and the adapter; no CLI or terminal UI is pulled in.
+
+```bash
+pnpm add @flash-dns/core @flash-dns/adapter-cloudflare
+```
 
 ```ts
 import { createCloudflareAdapter } from '@flash-dns/adapter-cloudflare'
@@ -98,39 +297,119 @@ const dns = createDnsManager({
   adapter: createCloudflareAdapter({ apiToken, zoneId })
 })
 
-const result = await dns.ensure({
+const { ref } = await dns.ensure({
   zone: 'example.com',
   name: 'preview.example.com',
   type: 'CNAME',
-  content: `${tunnelId}.cfargotunnel.com`,
+  content: 'target.example.com',
   owner: { application: 'flash-tunnel', id: sessionId },
   providerOptions: { proxied: true }
 }, { signal })
 
-// ref 可序列化到调用方会话状态；由调用方决定何时清理。
-await dns.remove(result.ref, { signal })
+// ref is JSON-serializable and contains no credentials.
+// Persist it with your own session state and remove it later.
+await dns.remove(ref, { signal })
 ```
 
-示例变量由调用方提供。`ensure` 返回 action、实际 record 和 ref；`remove` 返回 removed 或 already-absent。异常为 `@flash-dns/types` 的 `DnsError`，包含稳定 code、hint、retriable 和可选 details。core 不打印日志或终止进程。
+- `ensure` returns `{ action, record, ref }`.
+- `remove` returns `{ action: 'removed' | 'already-absent' }`.
+- `plan` returns `{ operation, zone, desired, existing?, conflict? }`.
+- Errors are `DnsError` instances from `@flash-dns/types`, with `code`, `hint`, `retriable` and optional `details`.
+- Pass `{ signal, requestId, logger }` as the operation context.
+- The core never logs to the console and never exits the process.
+- `@flash-dns/core` also exports `loadDnsConfig`, `resolveDnsConfig` and `desiredFromConfig` for tools that want the project rules. A full explicit hostname bypasses discovery entirely.
 
-## 归属、并发与服务商限制
+## Packages
 
-Cloudflare comment 使用 `flash-dns:v1:` 加上 base64url 编码的 `[application,id]`，保守限制为 500 字符。更新使用 PATCH，保留用户备注、tags、settings 和未指定选项。无 owner、其他 owner 或旧 `flash-tunnel:` 标记不会被自动接管。元数据用于防止误操作，访问授权仍由 API Token 决定。
+All public packages ship ESM and type declarations; the root workspace package is private.
 
-同 owner 的明确记录可与同名多值 A / AAAA / TXT 共存；如果没有归属匹配目标，已有同类型记录导致冲突。同 owner 多条记录要求 `recordId`。CNAME 跨类型共存直接报冲突，不通过删除旧记录迁移类型。
+| Package | Role |
+| --- | --- |
+| `flash-dns` | CLI binary and the user-facing `defineConfig` entry |
+| `@flash-dns/cli` | Command parsing, interaction and output |
+| `@flash-dns/core` | Naming, configuration, reconciliation and ownership |
+| `@flash-dns/config` | `defineConfig` and config types |
+| `@flash-dns/types` | Adapter contract, record types and errors |
+| `@flash-dns/adapter-cloudflare` | Cloudflare implementation |
 
-同一 manager 串行执行写操作；跨进程仍需要调用方的部署锁。执行前读取无法消除 API 不提供 compare-and-swap 导致的外部竞态。GET 请求对网络、5xx、429 有限退避，遵守 Retry-After；超过默认 10 秒单次等待上限时返回错误。写请求不盲目重发，失败后由协调层查询已提交状态；未确认成功时返回错误，由调用方后续重新 ensure。
+## Ownership, conflicts and concurrency
 
-Cloudflare TTL 范围保守采用自动或 60–86400 秒；本版不开放 Enterprise 的更低 TTL。proxied 记录要求自动 TTL，TXT 不接受 proxied 选项。完成表示服务商 API 状态符合预期，不代表缓存刷新、Tunnel 在线、证书或应用就绪。
+On Cloudflare, ownership lives in the record comment as `flash-dns:v1:<base64url([application,id])>`, capped at 500 characters. Updates use `PATCH`, so user-written comment text, tags and settings survive. A comment is only treated as ownership when it contains exactly one valid marker line.
 
-API 行为依据 [Cloudflare DNS Records API](https://developers.cloudflare.com/api/resources/dns/subresources/records/)。深层域名的证书覆盖由调用方另行安排，参见 [Universal SSL 限制](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/)。
+Ownership is bookkeeping, not authorization. Access is controlled by the API token.
 
-## 工程与发布
+| Situation | Result |
+| --- | --- |
+| No matching record | `create` |
+| Same owner, same values | `noop`, record ID preserved |
+| Same owner, different values | `update` in place |
+| More than one owned record at the name | `AMBIGUOUS_RECORD`; pass a record ID |
+| Existing record without an owner | `RECORD_CONFLICT`; automatic adoption is disabled |
+| Same name, different owner | `OWNERSHIP_MISMATCH` |
+| CNAME shares the name with another type | `RECORD_CONFLICT`; no automatic migration |
+| Adapter cannot express the request | `CAPABILITY_UNSUPPORTED` |
 
-六个包为 types、config、core、adapter-cloudflare、cli、flash-dns。公共包输出 ESM 和类型声明，根包 private。工程采用 pnpm、antfu ESLint、nano-staged、simple-git-hooks、严格 TypeScript、unbuild 和 Vitest。
+`ensure` manages one record. Same-owner A / AAAA / TXT values can coexist at a name, but when more than one owned record matches, pass a record ID. `ensure` never deletes other records at the same name.
 
-发布流程沿用 flash-tunnel 的 `.github/workflows/release.yaml`，唯一触发条件是推送 `v*` tag。普通分支 push、PR 和手动调度均不触发。流程先在 Windows / Linux、Node 22.14 / 24 验证构建、lint、类型、测试及打包，再通过 OIDC 发布 workspace 中的公开包，跳过 private 根包。
+Deletion takes a ref (provider, zone ID, record ID, owner, optional snapshot), re-reads the record, and verifies both owner and snapshot. If either changed, deletion is refused. A record that is already gone is reported as `already-absent`.
 
-发布前需要在各 npm 包的 Trusted Publisher 设置中绑定 GitHub 组织 `flash-tunnel`、仓库 `flash-dns` 和 workflow 文件名 `release.yaml`，并核对包的发布权限。流水线不依赖 NPM_TOKEN；配置文件不能代替 npm 后台绑定。各包版本需与发布 tag 一致，例如 0.1.0 对应 `v0.1.0`。普通安装、构建和测试不会操作真实 DNS。
+Within one manager, writes are serialized. Cross-process coordination is the caller's responsibility — DNS APIs have no compare-and-swap. Reads retry with capped backoff and honor `Retry-After`; writes are not blindly retried. If a retriable write response is lost, the SDK re-reads the record before reporting failure.
 
-MIT License。
+Success means the provider API matches the requested record. It does not mean DNS caches are flushed, a tunnel is online, or HTTPS is ready.
+
+## Security
+
+- The CLI reads `CLOUDFLARE_API_TOKEN` from the environment only. It is never accepted as a flag or config field, and it is redacted from output.
+- Use a zone-scoped token with an expiry. Grant Zone DNS Edit, plus Zone Read when resolving by name.
+- Nothing is deleted on exit, `Ctrl+C` or `SIGTERM`; removal is always an explicit command or SDK call.
+- There is no global overwrite switch. Unmanaged and foreign-owned records are refused rather than replaced.
+- The config file is trusted JavaScript/TypeScript and is executed at load time.
+- The SDK accepts the token as a constructor argument, so credential storage stays the caller's decision.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `AUTH_INVALID` or HTTP `401` | Set a valid `CLOUDFLARE_API_TOKEN` in the same shell that runs the command |
+| `PERMISSION_DENIED` or HTTP `403` | Grant Zone DNS Edit; add Zone Read when the zone is resolved by name |
+| `ZONE_NOT_FOUND` / `ZONE_NOT_ACTIVE` | Check the zone name or ID, and confirm the domain is active in Cloudflare |
+| `RECORD_CONFLICT` | The name has an unmanaged record. Choose another hostname or resolve it manually; there is no overwrite switch |
+| `OWNERSHIP_MISMATCH` | The record belongs to another owner. Use that owner's application and ID, or a different hostname |
+| `AMBIGUOUS_RECORD` | Several owned records match; add `--record-id` |
+| `PLAN_STALE` | DNS changed between planning and writing, or after selection. Run `plan` again |
+| `CAPABILITY_UNSUPPORTED` | For example TXT with `proxied`, a manual TTL with `proxied`, or a TTL outside 60–86400 |
+| `RATE_LIMITED` / `REQUEST_TIMEOUT` | Retry later. Reads retry automatically; writes should be retried with `ensure` |
+| Config or naming error (exit `2`) | Run `plan --verbose` to confirm which source each field came from |
+| `remove` refuses in CI | Add `--yes` and select the record with `--record-id` or a unique hostname |
+| Wildcard certificate issue | `*.` records are allowed, but certificates are not managed here; [Universal SSL](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/) may not cover deep names |
+
+## Development
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:pack
+```
+
+`pnpm check` runs build, lint, typecheck, tests and pack smoke in one go. `pnpm stub` creates development entry points for cross-package work. Requires Node `>= 22.14` and pnpm `12.15.0`; both are declared in `package.json`.
+
+Tests use an in-memory Cloudflare fixture: no credentials, no real DNS calls. `test:pack` installs the local tarballs into a temporary directory and may download runtime dependencies from the registry, but it never touches the DNS API.
+
+Issues and pull requests are welcome. Run `pnpm check` before opening one.
+
+## Release
+
+Pushing a `v*` tag is the only release trigger. The workflow first verifies build, lint, typecheck, tests and pack smoke on Windows and Linux with Node 22.14 and 24. It then publishes the public workspace packages from Ubuntu using npm trusted publishing (OIDC); no `NPM_TOKEN` is used.
+
+Keep every package version in sync with the tag — for example `v0.1.1` needs version `0.1.1` — and configure the npm Trusted Publisher for each package with the `flash-tunnel/flash-dns` repository and the `release.yaml` workflow name.
+
+## Design docs
+
+The full design is in [ai-docs/design-docs](https://github.com/flash-tunnel/flash-dns/tree/main/ai-docs/design-docs) (Chinese).
+
+## License
+
+[MIT](https://github.com/flash-tunnel/flash-dns/blob/main/LICENSE)
