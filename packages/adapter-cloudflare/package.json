@@ -1,7 +1,7 @@
 {
   "name": "@flash-dns/adapter-cloudflare",
   "type": "module",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Cloudflare DNS CRUD adapter with pagination and ownership metadata.",
   "license": "MIT",
   "homepage": "https://github.com/flash-tunnel/flash-dns#readme",
